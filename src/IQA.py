@@ -1,21 +1,41 @@
 import tensorflow as tf
 from GAN import load_wrapper
+import tensorflow_addons as tfa
+import math
 
 
-def load_iqa(data_range,splits=[1/3,2/3],path='../gates/'):
-# Splits is a list [a,b] with 0<=a<=b<=1
-# Returns 3 datasets with filenames in [0,a], [a,b], [b,1] (relative to the data range)
-  (a,d)=data_range
-  b = int(round(a+(d-a)*splits[0]))
-  c = int(round(a+(d-a)*splits[1]))
-  datasets=[]
-  datasets.append(tf.data.Dataset.list_files([path+'train/%i.png' % i for i in range(a,b)]))
-  datasets.append(tf.data.Dataset.list_files([path+'train/%i.png' % i for i in range(b,c)]))
-  datasets.append(tf.data.Dataset.list_files([path+'train/%i.png' % i for i in range(c,d)]))
-  for i in range(len(datasets)):
-    datasets[i] = datasets[i].shuffle(400)
-    datasets[i] = datasets[i].map(load_wrapper)
-  return datasets
+def load_iqa(data_range, splits=[1 / 3, 2 / 3], path='../gates/'):
+    # Splits is a list [a,b] with 0<=a<=b<=1
+    # Returns 3 datasets with filenames in [0,a], [a,b], [b,1] (relative to the data range)
+    (a, d) = data_range
+    b = int(round(a + (d - a) * splits[0]))
+    c = int(round(a + (d - a) * splits[1]))
+    datasets = []
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)]))
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)]))
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)]))
+    for i in range(len(datasets)):
+        datasets[i] = datasets[i].shuffle(400)
+        datasets[i] = datasets[i].map(load_wrapper)
+    return datasets
+
+
+def aug_map(x, y):
+    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
+        x = tf.image.flip_left_right(x)
+        y = tf.image.flip_left_right(y)
+    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
+        x = tf.image.flip_up_down(x)
+        y = tf.image.flip_up_down(y)
+    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
+        angle = tf.random.uniform((1,), 0, 2 * math.pi, tf.float32)
+        x = tfa.image.rotate(x, angle)
+        y = tfa.image.rotate(y, angle)
+    return x, y
+
+
+def aug_ds(ds):
+    return ds.map(aug_map)
 
 
 class NoisyScoreDS():
@@ -27,17 +47,17 @@ class NoisyScoreDS():
         self.width = width
         self.height = height
         self.batch_size = batch_size
-        self.imgs=imgs
+        self.imgs = imgs
         self.n_channels = n_channels
         self.shuffle = shuffle
         self.generator_GAN = generator_GAN
         self.iqa_score = iqa_score
         self.crop_tol = crop_tol
         self.p_noise = p_noise
-        self.ds=self.__get_ds__()
+        self.ds = self.__get_ds__()
 
     def __getds__(self):
-        ds=tf.data.Dataset.from_tensor_slices()
+        ds = tf.data.Dataset.from_tensor_slices()
 
     def __getitem__(self, index):
         'Generate one batch of data'

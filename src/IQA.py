@@ -1,5 +1,5 @@
 import tensorflow as tf
-import src.GAN
+import GAN
 
 
 def load_iqa(data_range,splits=[1/3,2/3],path='../gates/'):

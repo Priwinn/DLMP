@@ -1,5 +1,5 @@
 import tensorflow as tf
-import GAN
+from GAN import load_wrapper
 
 
 def load_iqa(data_range,splits=[1/3,2/3],path='../gates/'):
@@ -14,7 +14,7 @@ def load_iqa(data_range,splits=[1/3,2/3],path='../gates/'):
   datasets.append(tf.data.Dataset.list_files([path+'train/%i.png' % i for i in range(c,d)]))
   for i in range(len(datasets)):
     datasets[i] = datasets[i].shuffle(400)
-    datasets[i] = datasets[i].map(load_image_train)
+    datasets[i] = datasets[i].map(load_wrapper)
   return datasets
 
 

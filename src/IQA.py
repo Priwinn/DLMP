@@ -11,9 +11,9 @@ def load_iqa(data_range, splits=[1 / 3, 2 / 3], path='../gates/'):
     b = int(round(a + (d - a) * splits[0]))
     c = int(round(a + (d - a) * splits[1]))
     datasets = []
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)]))
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)]))
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)]))
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)],shuffle=False))
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)],shuffle=False))
+    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)],shuffle=False))
     for i in range(len(datasets)):
         datasets[i] = datasets[i].map(load_wrapper)
     return datasets

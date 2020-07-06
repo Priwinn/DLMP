@@ -203,7 +203,7 @@ class GAN:
         for epoch in range(epochs):
             start = time.time()
 
-            for input_image, target in dataset:
+            for input_image, target in train_dataset:
                 self.train_step(input_image, target)
 
             clear_output(wait=True)

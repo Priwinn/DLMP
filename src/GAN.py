@@ -1,4 +1,6 @@
 import tensorflow as tf
+from IPython.display import clear_output
+from utils.plot_utils import *
 
 
 def load(image_file):
@@ -145,23 +147,71 @@ def Discriminator():
 
 
 def generator_loss(disc_generated_output, gen_output, target):
-  loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-  gan_loss = loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
+    loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    gan_loss = loss_object(tf.ones_like(disc_generated_output), disc_generated_output)
 
-  # mean absolute error
-  l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
+    # mean absolute error
+    l1_loss = tf.reduce_mean(tf.abs(target - gen_output))
 
-  total_gen_loss = gan_loss + (100 * l1_loss)
+    total_gen_loss = gan_loss + (100 * l1_loss)
 
-  return total_gen_loss
+    return total_gen_loss
 
 
 def discriminator_loss(disc_real_output, disc_generated_output):
-  loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-  real_loss = loss_object(tf.ones_like(disc_real_output), disc_real_output)
+    loss_object = tf.keras.losses.BinaryCrossentropy(from_logits=True)
+    real_loss = loss_object(tf.ones_like(disc_real_output), disc_real_output)
 
-  generated_loss = loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
+    generated_loss = loss_object(tf.zeros_like(disc_generated_output), disc_generated_output)
 
-  total_disc_loss = real_loss + generated_loss
+    total_disc_loss = real_loss + generated_loss
 
-  return total_disc_loss
+    return total_disc_loss
+
+
+class GAN:
+    def __init__(self):
+        self.generator = Generator()
+        self.discriminator = Discriminator()
+
+    def train_step(self, input_image, target):
+        generator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        discriminator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
+            gen_output = self.generator(input_image, training=True)
+
+            disc_real_output = self.discriminator([input_image, target], training=True)
+            disc_generated_output = self.discriminator([input_image, gen_output], training=True)
+
+            gen_loss = generator_loss(disc_generated_output, gen_output, target)
+            disc_loss = discriminator_loss(disc_real_output, disc_generated_output)
+
+        generator_gradients = gen_tape.gradient(gen_loss,
+                                                self.generator.trainable_variables)
+        discriminator_gradients = disc_tape.gradient(disc_loss,
+                                                     self.discriminator.trainable_variables)
+
+        generator_optimizer.apply_gradients(zip(generator_gradients,
+                                                self.generator.trainable_variables))
+        discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
+                                                    self.discriminator.trainable_variables))
+
+    def train(self, train_dataset, test_dataset, epochs, batch_size=4, shuffle=400):
+        epoch_average = 0
+        train_dataset = train_dataset.shuffle(shuffle).batch(batch_size)
+        for epoch in range(epochs):
+            start = time.time()
+
+            for input_image, target in dataset:
+                self.train_step(input_image, target)
+
+            clear_output(wait=True)
+            for inp, tar in test_dataset.shuffle(20).take(1):
+                plot_all(inp, tar, self.generator)
+
+            time_taken = time.time() - start
+            epoch_average = (epoch_average * epoch + time_taken) / (epoch + 1)
+            ETA = (epochs - epoch - 1) * epoch_average
+
+            print('Epoch {}/{}. Average time taken per epoch is {:.3} sec, ETA: {:.5} sec\n'.format(epoch + 1, epochs,
+                                                                                                    epoch_average, ETA))

@@ -15,7 +15,6 @@ def plot_all(inp, tar, model):
     prediction = model(inp, training=True)
     ssim = tf.image.ssim(tar, prediction, max_val=2.0)
     psnr = tf.image.psnr(tar, prediction, max_val=2.0)
-    print(ssim)
     for j in range(inp.shape[0]):
         plt.figure(figsize=(15, 15))
         display_list = [inp[j], tar[j], prediction[j]]

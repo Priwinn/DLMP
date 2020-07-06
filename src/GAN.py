@@ -94,7 +94,7 @@ def Generator():
                                            kernel_initializer=initializer,
                                            activation='tanh')  # (bs, 256, 256, 3)
 
-    inputs = tf.keras.layers.Input(shape=[IMG_HEIGHT, IMG_WIDTH, 3])
+    inputs = tf.keras.layers.Input(shape=[256, 256, 3])
     x = inputs
 
     # Downsampling through the model

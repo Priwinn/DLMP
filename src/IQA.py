@@ -15,7 +15,6 @@ def load_iqa(data_range, splits=[1 / 3, 2 / 3], path='../gates/'):
     datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)]))
     datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)]))
     for i in range(len(datasets)):
-        datasets[i] = datasets[i].shuffle(400)
         datasets[i] = datasets[i].map(load_wrapper)
     return datasets
 
@@ -29,8 +28,8 @@ def aug_map(x, y):
         y = tf.image.flip_up_down(y)
     if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
         angle = tf.random.uniform((1,), 0, 2 * math.pi, tf.float32)
-        x = tfa.image.rotate(x, angle)
-        y = tfa.image.rotate(y, angle)
+        x = tfa.image.rotate(x+1, angle)-1
+        y = tfa.image.rotate(y+1, angle)-1
     return x, y
 
 

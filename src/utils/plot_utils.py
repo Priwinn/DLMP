@@ -7,12 +7,13 @@ def plot_image(img):
     plt.imshow(tf.squeeze(img) * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
 
 
-def plot_all(inp, tar, model):
+def plot_all(inp, tar, model, crop=0.5):
     if tf.rank(inp) != 4:
         inp = tf.expand_dims(inp, axis=0)
     if tf.rank(tar) != 4:
         tar = tf.expand_dims(tar, axis=0)
-    prediction = model(inp, training=True)
+    prediction = tf.image.central_crop(model(inp, training=True), crop)
+    tar=tf.image.central_crop(tar, crop)
     ssim = tf.image.ssim(tar, prediction, max_val=2.0)
     psnr = tf.image.psnr(tar, prediction, max_val=2.0)
     for j in range(inp.shape[0]):

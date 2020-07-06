@@ -1,6 +1,7 @@
 import tensorflow as tf
 from IPython.display import clear_output
 from utils.plot_utils import *
+import time
 
 
 def load(image_file):

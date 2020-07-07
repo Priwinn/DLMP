@@ -121,7 +121,6 @@ class NoisyScoreDS():
             plt.title(title[i])
             display_im = tf.squeeze(display_list[i])
             plt.imshow(display_im * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
-
-        plt.axis('off')
+            plt.axis('off')
 
     plt.show()

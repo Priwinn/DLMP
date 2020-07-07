@@ -49,8 +49,7 @@ class NoisyScoreDS():
         self.p_noise = p_noise
         self.p_blur = p_blur
         self.crop = crop
-        self.ds = clean_ds.map(self.noise_map).shuffle(self.shuffle).batch(self.batch_size)
-
+        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map)
         if iqa_score == 'ssim':
             self.score = tf.image.ssim
         elif iqa_score == 'psnr':
@@ -100,7 +99,7 @@ class NoisyScoreDS():
 
     def plot_sample(self):
         plt.figure(figsize=(15, 15))
-        for x, y in self.clean_ds.shuffle(500).take(1):
+        for x, y in self.clean_ds.shuffle(500).take(1).batch(1):
             x, noisy_x, y, cropped_y, noisy_prediction, noisy_cropped_pred, noisy_score_cropped = self.noise_map_all(x,
                                                                                                                      y)
             prediction = self.generator(x, training=True)

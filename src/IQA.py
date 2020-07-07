@@ -119,7 +119,7 @@ class NoisyScoreDS():
         for i in [0, 1, 2, 4, 5, 6, 7, 8]:
             plt.subplot(3, 3, i + 1)
             plt.title(title[i])
-            display_im = display_list[i]
+            display_im = tf.squeeze(display_list[i])
             plt.imshow(display_im * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
 
         plt.axis('off')

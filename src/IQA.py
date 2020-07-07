@@ -2,18 +2,18 @@ import tensorflow as tf
 from GAN import load_wrapper
 import tensorflow_addons as tfa
 import math
+import matplotlib.pyplot as plt
 
 
-def load_iqa(data_range, splits=[1 / 3, 2 / 3], path='../gates/'):
+def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
     # Splits is a list [a,b] with 0<=a<=b<=1
     # Returns 3 datasets with filenames in [0,a], [a,b], [b,1] (relative to the data range)
     (a, d) = data_range
     b = int(round(a + (d - a) * splits[0]))
     c = int(round(a + (d - a) * splits[1]))
-    datasets = []
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)],shuffle=False))
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)],shuffle=False))
-    datasets.append(tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)],shuffle=False))
+    datasets = [tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)], shuffle=False),
+                tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)], shuffle=False),
+                tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)], shuffle=False)]
     for i in range(len(datasets)):
         datasets[i] = datasets[i].map(load_wrapper)
     return datasets
@@ -28,8 +28,8 @@ def aug_map(x, y):
         y = tf.image.flip_up_down(y)
     if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
         angle = tf.random.uniform((1,), 0, 2 * math.pi, tf.float32)
-        x = tfa.image.rotate(x+1, angle)-1
-        y = tfa.image.rotate(y+1, angle)-1
+        x = tfa.image.rotate(x + 1, angle) - 1
+        y = tfa.image.rotate(y + 1, angle) - 1
     return x, y
 
 
@@ -40,86 +40,77 @@ def aug_ds(ds):
 class NoisyScoreDS():
     'Generates data for Keras'
 
-    def __init__(self, imgs, generator, batch_size=32, width=256, height=256,
-                 n_channels=3, shuffle=1024, iqa_score='ssim', p_noise=1):
-        'Initialization'
-        self.width = width
-        self.height = height
+    def __init__(self, clean_ds, generator, batch_size=32, shuffle=1024, p_noise=1, p_blur=1, crop=0.5,
+                 iqa_score='ssim'):
         self.batch_size = batch_size
-        self.imgs = imgs
-        self.n_channels = n_channels
+        self.clean_ds = clean_ds
         self.shuffle = shuffle
-        self.generator_GAN = generator_GAN
-        self.iqa_score = iqa_score
-        self.crop_tol = crop_tol
+        self.generator = generator
         self.p_noise = p_noise
-        self.ds = self.__get_ds__()
+        self.p_blur = p_blur
+        self.crop = crop
+        self.ds = clean_ds.map(self.noise_map).shuffle(self.shuffle).batch(self.batch_size)
 
-    def __getds__(self):
-        ds = tf.data.Dataset.from_tensor_slices()
-
-    def __getitem__(self, index):
-        'Generate one batch of data'
-        # Generate indexes of the batch
-        indexes = self.indexes[index * self.batch_size:(index + 1) * self.batch_size]
-
-        # Find list of x,y in the batch
-
-        x_temp = np.stack([self.x[k, :, :, :] for k in indexes])
-        y_temp = np.stack([self.y[k, :, :, :] for k in indexes])
-        # Generate data
-        noisy_x, score = self.__data_generation(x_temp, y_temp, p_noise=self.p_noise)
-
-        return noisy_x, score
-
-    def on_epoch_end(self):
-        'Updates indexes after each epoch'
-        self.indexes = np.arange(len(self.x))
-        if self.shuffle == True:
-            np.random.shuffle(self.indexes)
-
-    def __data_generation(self, x_temp, y_temp, p_noise=1):
-        'Generates data containing batch_size samples'
-
-        # Generate noisy input with prob 0.5
-        if np.random.choice([0, 1], p=[1 - p_noise, p_noise]):
-            noise = np.random.normal(0, np.random.uniform(0, 40 / 256),
-                                     x_temp.shape)
+        if iqa_score == 'ssim':
+            self.score = tf.image.ssim
+        elif iqa_score == 'psnr':
+            self.score = tf.image.psnr
         else:
-            noise = np.zeros_like(x_temp)
+            raise NameError('iqa_score must be one of ssim or psnr')
 
-        noisy_x = x_temp + noise
+    def noise_map(self, x, y):
+        # Blur the input with probability p_blur
+        if tf.random.uniform([1]) < self.p_blur:
+            x = tfa.image.gaussian_filter2d(x)
+
+            # Generate noisy input with prob p_noise (random std)
+        if tf.random.uniform([1]) < self.p_noise:
+            x = x + tf.random.normal(x.shape, 0, tf.random.uniform([1], 0, 32 / 256))
+        x = tf.clip_by_value(x, -1, 1)
 
         # Get image prediction
-        prediction = self.generator_GAN(noisy_x, training=False)
+        prediction = self.generator(x, training=True)
 
         # Score image
-        if self.iqa_score == 'ssim':
-            score = tf.map_fn(lambda z: ssim(*crop_to_interest_area(z[0].numpy(), z[1].numpy(), tol=self.crop_tol),
-                                             multichannel=not GRAYSCALE), (y_temp, prediction),
-                              dtype=tf.float32).numpy()
-        elif self.iqa_score == 'mse':
-            score = tf.map_fn(lambda z: mse(*crop_to_interest_area(z[0].numpy(), z[1].numpy(), tol=self.crop_tol)),
-                              (y_temp, prediction), dtype=tf.float64).numpy()
+        score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
+                           max_val=2.0)
+        return x, score
+
+    def noise_map_all(self, x, y):
+        # Blur the input with probability p_blur
+        if tf.random.uniform([1]) < self.p_blur:
+            noisy_x = tfa.image.gaussian_filter2d(x)
         else:
-            raise NameError('iqa_score must be one of ssim or mse')
-        return noisy_x, score
+            noisy_x = x
+
+        # Generate noisy input with prob p_noise (random std)
+        if tf.random.uniform([1]) < self.p_noise:
+            noisy_x = noisy_x + tf.random.normal(x.shape, 0, tf.random.uniform([1], 0, 32 / 256))
+        noisy_x = tf.clip_by_value(noisy_x, -1, 1)
+
+        # Get image prediction
+        prediction = self.generator(noisy_x, training=True)
+
+        # Score image
+        cropped_y = tf.image.central_crop(y, self.crop)
+        cropped_pred = tf.image.central_crop(prediction, self.crop)
+        score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
+                           max_val=2.0)
+        return x, noisy_x, y, cropped_y, prediction, cropped_pred, score
 
     def plot_sample(self):
         plt.figure(figsize=(15, 15))
-        i = np.random.randint(0, len(self.x))
-        noisy_x, noisy_score_cropped = self.__data_generation(np.expand_dims(self.x[i, :, :, :], axis=0),
-                                                              np.expand_dims(self.y[i, :, :, :], axis=0))
-        prediction = self.generator_GAN(np.expand_dims(self.x[i, :, :, :], axis=0), training=False).numpy()[0, :, :, :]
-        tar = self.y[i, :, :, :].numpy()
-        prediction_cropped = crop_to_interest_area(tar, prediction, tol=self.crop_tol)[1]
-        noisy_prediction = self.generator_GAN(noisy_x, training=False).numpy()[0, :, :, :]
-        tar_cropped, noisy_prediction_cropped = crop_to_interest_area(tar, noisy_prediction, tol=self.crop_tol)
-        display_list = [self.x[i, :, :, :], prediction_cropped, prediction, '', tar_cropped, tar, noisy_x[0, :, :, :],
-                        noisy_prediction_cropped, noisy_prediction]
-        score_cropped = ssim(tar_cropped, prediction_cropped, multichannel=not GRAYSCALE)
-        noisy_score = ssim(tar, noisy_prediction, multichannel=not GRAYSCALE)
-        score = ssim(tar, prediction, multichannel=not GRAYSCALE)
+        for x, y in self.clean_ds.shuffle(500).take(1):
+            x, noisy_x, y, cropped_y, noisy_prediction, noisy_cropped_pred, noisy_score_cropped = self.noise_map_all(x,
+                                                                                                                     y)
+            prediction = self.generator(x, training=True)
+            cropped_pred = tf.image.central_crop(prediction, self.crop)
+
+        display_list = [x, cropped_pred, prediction, '', cropped_y, y, noisy_x,
+                        noisy_cropped_pred, noisy_prediction]
+        score_cropped = self.score(cropped_y, cropped_pred, max_val=2.0)
+        noisy_score = self.score(y, noisy_prediction, max_val=2.0)
+        score = self.score(y, prediction, max_val=2.0)
         title = ['Input Image', 'Predicted Image score=%f' % score_cropped,
                  'Predicted Image (not cropped) score=%f' % score, '',
                  'Ground Truth', 'Ground Truth (not cropped)', 'Noisy Image',
@@ -128,11 +119,9 @@ class NoisyScoreDS():
         for i in [0, 1, 2, 4, 5, 6, 7, 8]:
             plt.subplot(3, 3, i + 1)
             plt.title(title[i])
-            # getting the pixel values between [0, 1] to plot it.
             display_im = display_list[i]
-            if GRAYSCALE:
-                plt.imshow(display_im[:, :, 0] * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
-            else:
-                plt.imshow(display_im * 0.5 + 0.5)
-            plt.axis('off')
-        plt.show()
+            plt.imshow(display_im * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
+
+        plt.axis('off')
+
+    plt.show()

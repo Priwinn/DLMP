@@ -216,3 +216,19 @@ class GAN:
 
             print('Epoch {}/{}. Average time taken per epoch is {:.3} sec, ETA: {:.5} sec\n'.format(epoch + 1, epochs,
                                                                                                     epoch_average, ETA))
+
+
+def eval_model_ds(model, dataset, crop=0.5):
+    ssim_list = []
+    psnr_list = []
+    for (x, y) in dataset:
+        prediction = model(x, training=False)
+        ssim_list.append(
+            tf.image.ssim(tf.image.central_crop(y, crop), tf.image.central_crop(prediction, crop), max_val=2.0))
+        psnr_list.append(
+            tf.image.psnr(tf.image.central_crop(y, crop), tf.image.central_crop(prediction, crop), max_val=2.0))
+    ssim = tf.concat(ssim_list, axis=0)
+    psnr = tf.concat(psnr_list, axis=0)
+    print("PSNR: {:.3} +/- {:.3}".format(psnr.numpy().mean(), psnr.numpy().std()))
+    print("SSIM: {:.3} +/- {:.3}".format(ssim.numpy().mean(), ssim.numpy().std()))
+    return ssim, psnr

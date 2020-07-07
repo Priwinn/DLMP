@@ -65,7 +65,7 @@ class NoisyScoreDS():
 
             # Generate noisy input with prob p_noise (random std)
         if tf.random.uniform([1]) < self.p_noise:
-            x = x + tf.random.normal(x.shape, 0, tf.random.uniform([1], 0, 32 / 256))
+            x = x + tf.random.normal(tf.shape(x), 0, tf.random.uniform([1], 0, 32 / 256))
         x = tf.clip_by_value(x, -1, 1)
 
         # Get image prediction
@@ -85,7 +85,7 @@ class NoisyScoreDS():
 
         # Generate noisy input with prob p_noise (random std)
         if tf.random.uniform([1]) < self.p_noise:
-            noisy_x = noisy_x + tf.random.normal(x.shape, 0, tf.random.uniform([1], 0, 32 / 256))
+            noisy_x = noisy_x + tf.random.normal(tf.shape(x), 0, tf.random.uniform([1], 0, 32 / 256))
         noisy_x = tf.clip_by_value(noisy_x, -1, 1)
 
         # Get image prediction

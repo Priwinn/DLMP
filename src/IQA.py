@@ -49,13 +49,14 @@ class NoisyScoreDS():
         self.p_noise = p_noise
         self.p_blur = p_blur
         self.crop = crop
-        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map)
         if iqa_score == 'ssim':
             self.score = tf.image.ssim
         elif iqa_score == 'psnr':
             self.score = tf.image.psnr
         else:
             raise NameError('iqa_score must be one of ssim or psnr')
+
+        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map)
 
     def noise_map(self, x, y):
         # Blur the input with probability p_blur

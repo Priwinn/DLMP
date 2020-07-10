@@ -16,9 +16,9 @@ def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
     (a, d) = data_range
     b = int(round(a + (d - a) * splits[0]))
     c = int(round(a + (d - a) * splits[1]))
-    datasets = [tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(a, b)], shuffle=False),
-                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(b, c)], shuffle=False),
-                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(c, d)], shuffle=False)]
+    datasets = [tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(a, b)]),
+                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(b, c)]),
+                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(c, d)])]
     for i in range(len(datasets)):
         datasets[i] = datasets[i].map(load_wrapper,num_parallel_calls=tf.data.experimental.AUTOTUNE)
     return datasets

@@ -16,11 +16,11 @@ def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
     (a, d) = data_range
     b = int(round(a + (d - a) * splits[0]))
     c = int(round(a + (d - a) * splits[1]))
-    datasets = [tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(a, b)], shuffle=False),
-                tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(b, c)], shuffle=False),
-                tf.data.Dataset.list_files([path + 'train/%i.png' % i for i in range(c, d)], shuffle=False)]
+    datasets = [tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(a, b)], shuffle=False),
+                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(b, c)], shuffle=False),
+                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(c, d)], shuffle=False)]
     for i in range(len(datasets)):
-        datasets[i] = datasets[i].map(load_wrapper)
+        datasets[i] = datasets[i].map(load_wrapper,num_parallel_calls=tf.data.experimental.AUTOTUNE)
     return datasets
 
 
@@ -39,7 +39,7 @@ def aug_map(x, y):
 
 
 def aug_ds(ds):
-    return ds.map(aug_map)
+    return ds.map(aug_map,num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
 
 class NoisyScoreDS:
@@ -61,7 +61,7 @@ class NoisyScoreDS:
         else:
             raise NameError('iqa_score must be one of ssim or psnr')
 
-        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map).prefetch(2)
+        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map,num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(2)
 
     def noise_map(self, x, y):
         # Blur the input with probability p_blur
@@ -172,16 +172,16 @@ class IQATrainer:
         print('Done')
 
     def train(self, epochs):
-        self.iqa.fit(self.train_ds.map(self.transform), epochs=epochs, validation_data=self.val_ds.map(self.transform),
+        self.iqa.fit(self.train_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE), epochs=epochs, validation_data=self.val_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE),
                      callbacks=tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True
                                                                 )
                      )
 
     def evaluate(self, test_ds=False):
         if not test_ds:
-            test_ds = self.val_ds.map(self.transform)
+            test_ds = self.val_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE)
         else:
-            test_ds = test_ds.map(self.transform)
+            test_ds = test_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE)
         scores = [(y, tf.convert_to_tensor(self.detransform(self.iqa.predict(x)))) for x, y in test_ds.repeat(5)]
         real = tf.squeeze(tf.concat([y for y, z in scores], axis=0)).numpy()
         predicted = tf.squeeze(tf.concat([z for y, z in scores], axis=0)).numpy()

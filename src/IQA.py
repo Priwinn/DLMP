@@ -1,8 +1,13 @@
 import tensorflow as tf
-from GAN import load_wrapper
+from GAN import load_wrapper, eval_model_ds
 import tensorflow_addons as tfa
 import math
 import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import scipy as sp
+from pathlib import Path
+import json
 
 
 def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
@@ -37,11 +42,11 @@ def aug_ds(ds):
     return ds.map(aug_map)
 
 
-class NoisyScoreDS():
+class NoisyScoreDS:
     'Generates data for Keras'
 
     def __init__(self, clean_ds, generator, batch_size=32, shuffle=1024, p_noise=1, p_blur=1, crop=0.5,
-                 iqa_score='ssim'):
+                 iqa_score='ssim',prefetch=2):
         self.batch_size = batch_size
         self.clean_ds = clean_ds
         self.shuffle = shuffle
@@ -56,7 +61,7 @@ class NoisyScoreDS():
         else:
             raise NameError('iqa_score must be one of ssim or psnr')
 
-        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map)
+        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map).prefetch(2)
 
     def noise_map(self, x, y):
         # Blur the input with probability p_blur
@@ -122,5 +127,80 @@ class NoisyScoreDS():
             display_im = tf.squeeze(display_list[i])
             plt.imshow(display_im * 0.5 + 0.5, cmap='gray', vmin=0, vmax=1)
             plt.axis('off')
+        plt.show()
 
-    plt.show()
+    # Plot histogram, repeat to reduce variance
+    def hist(self, repeat=5, kde=False):
+        scores = tf.concat([y for x, y in self.ds.repeat(repeat)], axis=0).numpy()
+        ax = sns.distplot(scores,15, kde=kde)
+        ax.set_xlabel(self.score.upper())
+        if not kde:
+            ax.set_ylabel('Counts')
+        return ax
+
+
+class IQATrainer:
+
+    def __init__(self, train_clean_ds, val_clean_ds, generator, iqa, batch_size=8, shuffle=1024, p_noise=1, p_blur=1,
+                 crop=0.5, transform='standardize'):
+        self.batch_size = batch_size
+        self.train_ds = NoisyScoreDS(train_clean_ds, generator, batch_size=batch_size, shuffle=shuffle, p_noise=p_noise,
+                                     p_blur=p_blur, crop=crop)
+        self.val_ds = NoisyScoreDS(val_clean_ds, generator, batch_size=batch_size, shuffle=shuffle, p_noise=p_noise,
+                                   p_blur=p_blur, crop=crop)
+        self.shuffle = shuffle
+        self.generator = generator
+        self.p_noise = p_noise
+        self.p_blur = p_blur
+        self.crop = crop
+        self.iqa = iqa
+        print("Computing transformation variables")
+        if transform == 'scale':
+            scores = tf.concat([y for x, y in self.train_ds.repeat(3)], axis=0).numpy()
+            self.offset = np.min(scores)
+            self.scale = 1-self.offset
+            self.transform = lambda x, y: (x, (y - self.offset) / self.scale)
+            self.detransform = lambda y: y * self.scale + self.offset
+        elif transform == 'standardize':
+            scores = tf.concat([y for x, y in self.train_ds.repeat(3)], axis=0).numpy()
+            self.offset = np.mean(scores)
+            self.scale = np.std(scores)
+            self.transform = lambda x, y: (x, (y - self.offset) / self.scale)
+            self.detransform = lambda y: y * self.scale + self.offset
+        else:
+            raise NameError('iqa_score must be one of ssim or psnr')
+        print('Done')
+
+    def train(self, epochs):
+        self.iqa.fit(self.train_ds.map(self.transform), epochs=epochs, validation_data=self.val_ds.map(self.transform),
+                     callbacks=tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True
+                                                                )
+                     )
+
+    def evaluate(self, test_ds=False):
+        if not test_ds:
+            test_ds = self.val_ds.map(self.transform)
+        else:
+            test_ds = test_ds.map(self.transform)
+        scores = [(y, tf.convert_to_tensor(self.detransform(self.iqa.predict(x)))) for x, y in test_ds.repeat(5)]
+        real = tf.squeeze(tf.concat([y for y, z in scores], axis=0)).numpy()
+        predicted = tf.squeeze(tf.concat([z for y, z in scores], axis=0)).numpy()
+        spearman = sp.stats.spearmanr(real, predicted)[0]
+        pearson = sp.stats.pearsonr(real, predicted)[0]
+        print(f'LCC:{pearson}')
+        print(f'SROC:{spearman}')
+        return pearson, spearman
+
+    def save(self, model_name):
+        model_path = f"../models/{model_name}/{datetime.now().strftime('%Y%m%d_%H%M')}"
+        Path(model_path).mkdir(parents=True, exist_ok=True)
+        self.iqa.save(model_path + f"/{model_name}.h5")
+        with open(f'{model_path}/parameters.json','w+') as file:
+            parameters={'model_name':model_name,
+                        'offset':self.offset,
+                        'scale': self.scale}
+            json.dump(parameters,file)
+    def load(self,model_path):
+        parameters=json.load(model_path+'parameters.json')
+
+        self.iqa=tf.keras.models.load_model(model_path + f"/{parameters['model_name']}.h5")

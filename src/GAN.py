@@ -2,7 +2,8 @@ import tensorflow as tf
 from IPython.display import clear_output
 from utils.plot_utils import *
 import time
-
+from tensorflow.python.keras.engine import data_adapter
+from tensorflow.python.keras.engine.training import _minimize
 
 def load(image_file):
     image = tf.io.read_file(image_file)
@@ -170,52 +171,38 @@ def discriminator_loss(disc_real_output, disc_generated_output):
     return total_disc_loss
 
 
-class GAN:
+class GAN(tf.keras.Model):
     def __init__(self):
+        super(GAN, self).__init__()
         self.generator = Generator()
         self.discriminator = Discriminator()
+        self.compile()
 
-    def train_step(self, input_image, target):
-        generator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
-        discriminator_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+    def compile(self):
+        super(GAN, self).compile()
+        self.d_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        self.g_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
+        self.generator_loss = generator_loss
+        self.discriminator_loss = discriminator_loss
+
+    def train_step(self, data):
+        data = data_adapter.expand_1d(data)
+        input_image, target, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             gen_output = self.generator(input_image, training=True)
 
             disc_real_output = self.discriminator([input_image, target], training=True)
             disc_generated_output = self.discriminator([input_image, gen_output], training=True)
 
-            gen_loss = generator_loss(disc_generated_output, gen_output, target)
-            disc_loss = discriminator_loss(disc_real_output, disc_generated_output)
+            gen_loss = self.generator_loss(disc_generated_output, gen_output, target)
+            disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
 
-        generator_gradients = gen_tape.gradient(gen_loss,
-                                                self.generator.trainable_variables)
-        discriminator_gradients = disc_tape.gradient(disc_loss,
-                                                     self.discriminator.trainable_variables)
 
-        generator_optimizer.apply_gradients(zip(generator_gradients,
-                                                self.generator.trainable_variables))
-        discriminator_optimizer.apply_gradients(zip(discriminator_gradients,
-                                                    self.discriminator.trainable_variables))
-
-    def train(self, train_dataset, test_dataset, epochs, batch_size=4, shuffle=400):
-        epoch_average = 0
-        train_dataset = train_dataset.shuffle(shuffle).batch(batch_size)
-        for epoch in range(epochs):
-            start = time.time()
-
-            for input_image, target in train_dataset:
-                self.train_step(input_image, target)
-
-            clear_output(wait=True)
-            for inp, tar in test_dataset.shuffle(20).take(1):
-                plot_all(inp, tar, self.generator)
-
-            time_taken = time.time() - start
-            epoch_average = (epoch_average * epoch + time_taken) / (epoch + 1)
-            ETA = (epochs - epoch - 1) * epoch_average
-
-            print('Epoch {}/{}. Average time taken per epoch is {:.3} sec, ETA: {:.5} sec\n'.format(epoch + 1, epochs,
-                                                                                                    epoch_average, ETA))
+        _minimize(self.distribute_strategy, gen_tape, self.g_optimizer, gen_loss,
+                  self.generator.trainable_variables)
+        _minimize(self.distribute_strategy, disc_tape, self.d_optimizer, disc_loss,
+                  self.discriminator.trainable_variables)
+        return {"disc_loss": disc_loss, "gen_loss": gen_loss}
 
 
 def eval_model_ds(model, dataset, crop=0.5):
@@ -232,3 +219,10 @@ def eval_model_ds(model, dataset, crop=0.5):
     print("PSNR: {:.3} +/- {:.3}".format(psnr.numpy().mean(), psnr.numpy().std()))
     print("SSIM: {:.3} +/- {:.3}".format(ssim.numpy().mean(), ssim.numpy().std()))
     return ssim, psnr
+
+
+class PlotCallback(tf.keras.callbacks.Callback):
+
+    clear_output(wait=True)
+    for inp, tar in test_dataset.shuffle(20).take(1):
+        plot_all(inp, tar, self.generator)

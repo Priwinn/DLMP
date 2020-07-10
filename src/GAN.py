@@ -221,8 +221,3 @@ def eval_model_ds(model, dataset, crop=0.5):
     return ssim, psnr
 
 
-class PlotCallback(tf.keras.callbacks.Callback):
-
-    clear_output(wait=True)
-    for inp, tar in test_dataset.shuffle(20).take(1):
-        plot_all(inp, tar, self.generator)

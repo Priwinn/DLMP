@@ -12,12 +12,13 @@ def plot_all(inp, tar, model, crop=0.5):
         inp = tf.expand_dims(inp, axis=0)
     if tf.rank(tar) != 4:
         tar = tf.expand_dims(tar, axis=0)
-    prediction = tf.image.central_crop(model(inp, training=True), crop)
-    tar=tf.image.central_crop(tar, crop)
+    prediction = tf.image.central_crop(model.predict(inp), crop)
+    tar = tf.image.central_crop(tar, crop)
     ssim = tf.image.ssim(tar, prediction, max_val=2.0)
     psnr = tf.image.psnr(tar, prediction, max_val=2.0)
+    figures=[]
     for j in range(inp.shape[0]):
-        plt.figure(figsize=(15, 15))
+        figures.append(plt.figure(figsize=(15, 15)))
         display_list = [inp[j], tar[j], prediction[j]]
         title = ['Input Image', 'Ground Truth', 'Predicted Image']
         for i in range(3):
@@ -29,3 +30,4 @@ def plot_all(inp, tar, model, crop=0.5):
         plt.show()
         print('Image shown PSNR {:.5}'.format(psnr[j]))
         print('Image shown SSIM {:.5}'.format(ssim[j]))
+    return figures

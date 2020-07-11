@@ -4,6 +4,8 @@ from utils.plot_utils import *
 import time
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
+import datetime
+from utils.plot_utils import *
 
 def load(image_file):
     image = tf.io.read_file(image_file)
@@ -171,6 +173,43 @@ def discriminator_loss(disc_real_output, disc_generated_output):
     return total_disc_loss
 
 
+class TensorBoardImg(tf.keras.callbacks.Callback):
+    def __init__(self, plot_ds,crop=1):
+        super(TensorBoardImg, self).__init__()
+        self.plot_ds=plot_ds
+        self.crop=crop
+
+
+
+    def on_epoch_end(self, epoch, logs=None):
+        log_dir = "../logs/"
+
+        summary_writer = tf.summary.create_file_writer(
+            log_dir + "gan/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+        def plot_to_image(figure):
+            """Converts the matplotlib plot specified by 'figure' to a PNG image and
+            returns it. The supplied figure is closed and inaccessible after this call."""
+            # Save the plot to a PNG in memory.
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            # Closing the figure prevents it from being displayed directly inside
+            # the notebook.
+            plt.close(figure)
+            buf.seek(0)
+            # Convert PNG buffer to TF image
+            image = tf.image.decode_png(buf.getvalue(), channels=4)
+            # Add the batch dimension
+            image = tf.expand_dims(image, 0)
+            return image
+
+        with summary_writer.as_default():
+            for x,y in self.plot_ds:
+                figures = plot_all(x,y,self.model,crop=self.crop)
+                for figure in figures
+                tf.summary.image('validation reconstructions', plot_to_image(figure), step=epoch)
+
+
 class GAN(tf.keras.Model):
     def __init__(self):
         super(GAN, self).__init__()
@@ -202,8 +241,13 @@ class GAN(tf.keras.Model):
                   self.generator.trainable_variables)
         _minimize(self.distribute_strategy, disc_tape, self.d_optimizer, disc_loss,
                   self.discriminator.trainable_variables)
+
         return {"disc_loss": disc_loss, "gen_loss": gen_loss}
 
+    def predict_step(self, data):
+        data = data_adapter.expand_1d(data)
+        x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
+        return self.generator(x, training=True)
 
 def eval_model_ds(model, dataset, crop=0.5):
     ssim_list = []
@@ -221,8 +265,7 @@ def eval_model_ds(model, dataset, crop=0.5):
     return ssim, psnr
 
 
-#class PlotCallback(tf.keras.callbacks.Callback):
-#
-#    clear_output(wait=True)
-#    for inp, tar in test_dataset.shuffle(20).take(1):
-#        plot_all(inp, tar, self.generator)
+
+
+
+

@@ -5,6 +5,7 @@ import time
 from tensorflow.python.keras.engine import data_adapter
 from tensorflow.python.keras.engine.training import _minimize
 import datetime
+import io
 from utils.plot_utils import *
 
 def load(image_file):

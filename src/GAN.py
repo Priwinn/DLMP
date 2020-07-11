@@ -231,6 +231,9 @@ class GAN(tf.keras.Model):
         self.generator_loss = generator_loss
         self.discriminator_loss = discriminator_loss
 
+    def call(self, inputs, training=None, mask=None):
+        self.generator(inputs,training=True)
+
     def train_step(self, data):
         data = data_adapter.expand_1d(data)
         input_image, target, sample_weight = data_adapter.unpack_x_y_sample_weight(data)

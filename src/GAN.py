@@ -179,14 +179,13 @@ class TensorBoardImg(tf.keras.callbacks.Callback):
         super(TensorBoardImg, self).__init__()
         self.plot_ds=plot_ds
         self.crop=crop
+        self.summary_writer = tf.summary.create_file_writer(
+            "../logs/gan/training_imgs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
 
 
     def on_epoch_end(self, epoch, logs=None):
-        log_dir = "../logs/"
 
-        summary_writer = tf.summary.create_file_writer(
-            log_dir + "gan/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
 
         def plot_to_image(figure):
             """Converts the matplotlib plot specified by 'figure' to a PNG image and
@@ -204,11 +203,13 @@ class TensorBoardImg(tf.keras.callbacks.Callback):
             image = tf.expand_dims(image, 0)
             return image
 
-        with summary_writer.as_default():
-            for x,y in self.plot_ds:
-                figures = plot_all(x,y,self.model,crop=self.crop)
-                for figure in figures:
-                    tf.summary.image('validation reconstructions', plot_to_image(figure), step=epoch)
+        i=0
+        for x,y in self.plot_ds:
+            figures = plot_all(x,y,self.model,crop=self.crop,show=False)
+            for figure in figures:
+                i=i+1
+                with self.summary_writer.as_default():
+                  tf.summary.image(f'Validation reconstruction {i}', plot_to_image(figure), step=epoch)
 
 
 class GAN(tf.keras.Model):
@@ -218,8 +219,8 @@ class GAN(tf.keras.Model):
         self.discriminator = Discriminator()
         self.compile()
 
-    def compile(self):
-        super(GAN, self).compile()
+    def compile(self,metrics):
+        super(GAN, self).compile(metrics=metrics)
         self.d_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
         self.g_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
         self.generator_loss = generator_loss

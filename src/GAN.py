@@ -206,8 +206,8 @@ class TensorBoardImg(tf.keras.callbacks.Callback):
         with summary_writer.as_default():
             for x,y in self.plot_ds:
                 figures = plot_all(x,y,self.model,crop=self.crop)
-                for figure in figures
-                tf.summary.image('validation reconstructions', plot_to_image(figure), step=epoch)
+                for figure in figures:
+                    tf.summary.image('validation reconstructions', plot_to_image(figure), step=epoch)
 
 
 class GAN(tf.keras.Model):

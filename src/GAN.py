@@ -8,6 +8,7 @@ import datetime
 import io
 from utils.plot_utils import *
 
+
 def load(image_file):
     image = tf.io.read_file(image_file)
     image = tf.image.decode_jpeg(image)
@@ -219,8 +220,12 @@ class GAN(tf.keras.Model):
         self.discriminator = Discriminator()
         self.compile()
 
-    def compile(self,metrics):
-        super(GAN, self).compile(metrics=metrics)
+    def compile(self):
+        def ssim(y_true,y_pred):
+          return tf.image.ssim(y_true,y_pred,2.0)
+        def psnr(y_true,y_pred):
+          return tf.image.psnr(y_true,y_pred,2.0)
+        super(GAN, self).compile(metrics=[psnr,ssim])
         self.d_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
         self.g_optimizer = tf.keras.optimizers.Adam(2e-4, beta_1=0.5)
         self.generator_loss = generator_loss
@@ -243,13 +248,29 @@ class GAN(tf.keras.Model):
                   self.generator.trainable_variables)
         _minimize(self.distribute_strategy, disc_tape, self.d_optimizer, disc_loss,
                   self.discriminator.trainable_variables)
-
-        return {"disc_loss": disc_loss, "gen_loss": gen_loss}
+        self.compiled_metrics.update_state(target, gen_output, sample_weight)
+        return {"disc_loss": disc_loss, "gen_loss": gen_loss,**{m.name: m.result() for m in self.metrics}}
 
     def predict_step(self, data):
         data = data_adapter.expand_1d(data)
         x, _, _ = data_adapter.unpack_x_y_sample_weight(data)
         return self.generator(x, training=True)
+
+    def test_step(self, data):
+        data = data_adapter.expand_1d(data)
+        input_image, target, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+        gen_output = self.generator(input_image, training=True)
+
+        disc_real_output = self.discriminator([input_image, target], training=True)
+        disc_generated_output = self.discriminator([input_image, gen_output], training=True)
+
+        gen_loss = self.generator_loss(disc_generated_output, gen_output, target)
+        disc_loss = self.discriminator_loss(disc_real_output, disc_generated_output)
+
+        self.compiled_metrics.update_state(target, gen_output, sample_weight)
+        return {"disc_loss": disc_loss, "gen_loss": gen_loss,**{m.name: m.result() for m in self.metrics}}
+
 
 def eval_model_ds(model, dataset, crop=0.5):
     ssim_list = []
@@ -265,6 +286,7 @@ def eval_model_ds(model, dataset, crop=0.5):
     print("PSNR: {:.3} +/- {:.3}".format(psnr.numpy().mean(), psnr.numpy().std()))
     print("SSIM: {:.3} +/- {:.3}".format(ssim.numpy().mean(), ssim.numpy().std()))
     return ssim, psnr
+
 
 
 

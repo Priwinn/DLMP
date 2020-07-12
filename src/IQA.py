@@ -139,6 +139,29 @@ class NoisyScoreDS:
         return ax
 
 
+class IQA(tf.keras.models.Model):
+    def __init__(self,iqa,generator):
+        super(IQA,self).__init__()
+        self.generator=generator
+        self.iqa=iqa
+
+    def train_step(self, data):
+        data = data_adapter.expand_1d(data)
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+        prediction=self.generator.predict(x)
+        score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
+                           max_val=2.0)
+        with tf.GradientTape() as tape:
+            score_pred = self.iqa(x, training=True)
+            loss = self.compiled_loss(
+                score, score_pred, sample_weight, regularization_losses=self.losses)
+
+        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                  self.trainable_variables)
+        self.compiled_metrics.update_state(target, gen_output, sample_weight)
+        return {m.name: m.result() for m in self.metrics}
+
+
 class IQATrainer:
 
     def __init__(self, train_clean_ds, val_clean_ds, generator, iqa, batch_size=8, shuffle=1024, p_noise=1, p_blur=1,

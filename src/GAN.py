@@ -37,7 +37,7 @@ def load_wrapper(image_file):
     return input_image, real_image
 
 
-def downsample(filters, size, apply_batchnorm=True):
+def downsample(filters, size, apply_batchnorm=True,fused=True):
     initializer = tf.random_normal_initializer(0., 0.02)
 
     result = tf.keras.Sequential()
@@ -46,7 +46,7 @@ def downsample(filters, size, apply_batchnorm=True):
                                kernel_initializer=initializer, use_bias=False))
 
     if apply_batchnorm:
-        result.add(tf.keras.layers.BatchNormalization())
+        result.add(tf.keras.layers.BatchNormalization(fused=fused))
 
     result.add(tf.keras.layers.LeakyReLU())
 
@@ -82,7 +82,7 @@ def Generator():
         downsample(512, 4),  # (bs, 8, 8, 512)
         downsample(512, 4),  # (bs, 4, 4, 512)
         downsample(512, 4),  # (bs, 2, 2, 512)
-        downsample(512, 4),  # (bs, 1, 1, 512)
+        downsample(512, 4,fused=False),  # (bs, 1, 1, 512)
     ]
 
     up_stack = [
@@ -279,7 +279,7 @@ def eval_model_ds(model, dataset, crop=0.5):
     ssim_list = []
     psnr_list = []
     for (x, y) in dataset:
-        prediction = model(x, training=False)
+        prediction = model.predict(x)
         ssim_list.append(
             tf.image.ssim(tf.image.central_crop(y, crop), tf.image.central_crop(prediction, crop), max_val=2.0))
         psnr_list.append(
@@ -289,7 +289,6 @@ def eval_model_ds(model, dataset, crop=0.5):
     print("PSNR: {:.3} +/- {:.3}".format(psnr.numpy().mean(), psnr.numpy().std()))
     print("SSIM: {:.3} +/- {:.3}".format(ssim.numpy().mean(), ssim.numpy().std()))
     return ssim, psnr
-
 
 
 

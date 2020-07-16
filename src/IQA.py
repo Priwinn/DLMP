@@ -10,7 +10,7 @@ from pathlib import Path
 import json
 
 
-def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
+def load_iqa_ds(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
     # Splits is a list [a,b] with 0<=a<=b<=1
     # Returns 3 datasets with filenames in [0,a], [a,b], [b,1] (relative to the data range)
     (a, d) = data_range
@@ -20,7 +20,7 @@ def load_iqa(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
                 tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(b, c)]),
                 tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(c, d)])]
     for i in range(len(datasets)):
-        datasets[i] = datasets[i].map(load_wrapper,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        datasets[i] = datasets[i].map(load_wrapper, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     return datasets
 
 
@@ -39,14 +39,14 @@ def aug_map(x, y):
 
 
 def aug_ds(ds):
-    return ds.map(aug_map,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    return ds.map(aug_map, num_parallel_calls=tf.data.experimental.AUTOTUNE)
 
 
 class NoisyScoreDS:
     'Generates data for Keras'
 
     def __init__(self, clean_ds, generator, batch_size=32, shuffle=1024, p_noise=1, p_blur=1, crop=0.5,
-                 iqa_score='ssim',prefetch=2):
+                 iqa_score='ssim', prefetch=2):
         self.batch_size = batch_size
         self.clean_ds = clean_ds
         self.shuffle = shuffle
@@ -61,7 +61,9 @@ class NoisyScoreDS:
         else:
             raise NameError('iqa_score must be one of ssim or psnr')
 
-        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map,num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(2)
+        self.ds = clean_ds.shuffle(self.shuffle).batch(self.batch_size).map(self.noise_map,
+                                                                            num_parallel_calls=tf.data.experimental.AUTOTUNE).prefetch(
+            2)
 
     def noise_map(self, x, y):
         # Blur the input with probability p_blur
@@ -74,7 +76,7 @@ class NoisyScoreDS:
         x = tf.clip_by_value(x, -1, 1)
 
         # Get image prediction
-        prediction = self.generator(x, training=True)
+        prediction = self.generator.predict(x, training=True)
 
         # Score image
         score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
@@ -94,7 +96,7 @@ class NoisyScoreDS:
         noisy_x = tf.clip_by_value(noisy_x, -1, 1)
 
         # Get image prediction
-        prediction = self.generator(noisy_x, training=True)
+        prediction = self.generator.predcit(noisy_x, training=True)
 
         # Score image
         cropped_y = tf.image.central_crop(y, self.crop)
@@ -132,34 +134,11 @@ class NoisyScoreDS:
     # Plot histogram, repeat to reduce variance
     def hist(self, repeat=5, kde=False):
         scores = tf.concat([y for x, y in self.ds.repeat(repeat)], axis=0).numpy()
-        ax = sns.distplot(scores,15, kde=kde)
+        ax = sns.distplot(scores, 15, kde=kde)
         ax.set_xlabel(self.score.upper())
         if not kde:
             ax.set_ylabel('Counts')
         return ax
-
-
-class IQA(tf.keras.models.Model):
-    def __init__(self,iqa,generator):
-        super(IQA,self).__init__()
-        self.generator=generator
-        self.iqa=iqa
-
-    def train_step(self, data):
-        data = data_adapter.expand_1d(data)
-        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
-        prediction=self.generator.predict(x)
-        score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
-                           max_val=2.0)
-        with tf.GradientTape() as tape:
-            score_pred = self.iqa(x, training=True)
-            loss = self.compiled_loss(
-                score, score_pred, sample_weight, regularization_losses=self.losses)
-
-        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
-                  self.trainable_variables)
-        self.compiled_metrics.update_state(target, gen_output, sample_weight)
-        return {m.name: m.result() for m in self.metrics}
 
 
 class IQATrainer:
@@ -181,7 +160,7 @@ class IQATrainer:
         if transform == 'scale':
             scores = tf.concat([y for x, y in self.train_ds.repeat(3)], axis=0).numpy()
             self.offset = np.min(scores)
-            self.scale = 1-self.offset
+            self.scale = 1 - self.offset
             self.transform = lambda x, y: (x, (y - self.offset) / self.scale)
             self.detransform = lambda y: y * self.scale + self.offset
         elif transform == 'standardize':
@@ -195,16 +174,17 @@ class IQATrainer:
         print('Done')
 
     def train(self, epochs):
-        self.iqa.fit(self.train_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE), epochs=epochs, validation_data=self.val_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE),
+        self.iqa.fit(self.train_ds.map(self.transform, num_parallel_calls=tf.data.experimental.AUTOTUNE), epochs=epochs,
+                     validation_data=self.val_ds.map(self.transform, num_parallel_calls=tf.data.experimental.AUTOTUNE),
                      callbacks=tf.keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True
                                                                 )
                      )
 
     def evaluate(self, test_ds=False):
         if not test_ds:
-            test_ds = self.val_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+            test_ds = self.val_ds.map(self.transform, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         else:
-            test_ds = test_ds.map(self.transform,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+            test_ds = test_ds.map(self.transform, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         scores = [(y, tf.convert_to_tensor(self.detransform(self.iqa.predict(x)))) for x, y in test_ds.repeat(5)]
         real = tf.squeeze(tf.concat([y for y, z in scores], axis=0)).numpy()
         predicted = tf.squeeze(tf.concat([z for y, z in scores], axis=0)).numpy()
@@ -218,12 +198,63 @@ class IQATrainer:
         model_path = f"../models/{model_name}/{datetime.now().strftime('%Y%m%d_%H%M')}"
         Path(model_path).mkdir(parents=True, exist_ok=True)
         self.iqa.save(model_path + f"/{model_name}.h5")
-        with open(f'{model_path}/parameters.json','w+') as file:
-            parameters={'model_name':model_name,
-                        'offset':self.offset,
-                        'scale': self.scale}
-            json.dump(parameters,file)
-    def load(self,model_path):
-        parameters=json.load(model_path+'parameters.json')
+        with open(f'{model_path}/parameters.json', 'w+') as file:
+            parameters = {'model_name': model_name,
+                          'offset': self.offset,
+                          'scale': self.scale}
+            json.dump(parameters, file)
 
-        self.iqa=tf.keras.models.load_model(model_path + f"/{parameters['model_name']}.h5")
+    def load(self, model_path):
+        parameters = json.load(model_path + 'parameters.json')
+
+        self.iqa = tf.keras.models.load_model(model_path + f"/{parameters['model_name']}.h5")
+
+
+class TrainingTrueGenerator(tf.keras.models.Model):
+    def __init__(self, generator):
+        super(TrainingTrueGenerator, self).__init__()
+        self.generator = generator
+
+    def call(self, inputs):
+        return self.generator(inputs, training=True)
+
+
+class IQA(tf.keras.models.Model):
+    def __init__(self,iqa,generator,p_noise=1, p_blur=1, crop=0.5):
+        super(IQA,self).__init__()
+        self.generator=generator
+        self.iqa=iqa
+        self.score = tf.image.ssim
+        self.crop=0.5
+        self.compile()
+
+
+    def compile(self):
+      super(IQA,self).compile(optimizer=tf.keras.optimizers.Adam(),loss=tf.keras.losses.MeanSquaredError())
+
+    def train_step(self, data):
+
+        def standardize(y):
+          return(y-0.88749385)/0.06297474
+        data = data_adapter.expand_1d(data)
+        x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
+
+        if tf.random.uniform([1]) < self.p_blur:
+          x = tfa.image.gaussian_filter2d(x)
+        # Generate noisy input with prob p_noise (random std)
+        if tf.random.uniform([1]) < self.p_noise:
+          x = x + tf.random.normal(tf.shape(x), 0, tf.random.uniform([1], 0, 32 / 256))
+        x = tf.clip_by_value(x, -1, 1)
+
+        prediction=self.generator(x,training=True)
+        score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
+                           max_val=2.0)
+        score = standardize(score)
+        with tf.GradientTape() as tape:
+            score_pred = self.iqa(x, training=True)
+            loss = self.compiled_loss(score, score_pred)
+
+        _minimize(self.distribute_strategy, tape, self.optimizer, loss,
+                  self.iqa.trainable_variables)
+        self.compiled_metrics.update_state(score,score_pred)
+        return {m.name: m.result() for m in self.metrics}

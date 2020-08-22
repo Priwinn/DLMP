@@ -1,5 +1,4 @@
 import tensorflow as tf
-from GAN import load_wrapper, eval_model_ds
 import tensorflow_addons as tfa
 import math
 import matplotlib.pyplot as plt

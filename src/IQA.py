@@ -10,38 +10,6 @@ from pathlib import Path
 import json
 
 
-def load_iqa_ds(data_range, splits=(1 / 3, 2 / 3), path='../gates/'):
-    # Splits is a list [a,b] with 0<=a<=b<=1
-    # Returns 3 datasets with filenames in [0,a], [a,b], [b,1] (relative to the data range)
-    (a, d) = data_range
-    b = int(round(a + (d - a) * splits[0]))
-    c = int(round(a + (d - a) * splits[1]))
-    datasets = [tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(a, b)]),
-                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(b, c)]),
-                tf.data.Dataset.from_tensor_slices([path + 'train/%i.png' % i for i in range(c, d)])]
-    for i in range(len(datasets)):
-        datasets[i] = datasets[i].map(load_wrapper, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    return datasets
-
-
-def aug_map(x, y):
-    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
-        x = tf.image.flip_left_right(x)
-        y = tf.image.flip_left_right(y)
-    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
-        x = tf.image.flip_up_down(x)
-        y = tf.image.flip_up_down(y)
-    if tf.random.uniform((1,), 0, 2, tf.int32) == 1:
-        angle = tf.random.uniform((1,), 0, 2 * math.pi, tf.float32)
-        x = tfa.image.rotate(x + 1, angle) - 1
-        y = tfa.image.rotate(y + 1, angle) - 1
-    return x, y
-
-
-def aug_ds(ds):
-    return ds.map(aug_map, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-
 class NoisyScoreDS:
     'Generates data for Keras'
 
@@ -220,33 +188,33 @@ class TrainingTrueGenerator(tf.keras.models.Model):
 
 
 class IQA(tf.keras.models.Model):
-    def __init__(self,iqa,generator,p_noise=1, p_blur=1, crop=0.5):
-        super(IQA,self).__init__()
-        self.generator=generator
-        self.iqa=iqa
+    def __init__(self, iqa, generator, p_noise=1, p_blur=1, crop=0.5):
+        super(IQA, self).__init__()
+        self.generator = generator
+        self.iqa = iqa
         self.score = tf.image.ssim
-        self.crop=0.5
+        self.crop = 0.5
         self.compile()
 
-
     def compile(self):
-      super(IQA,self).compile(optimizer=tf.keras.optimizers.Adam(),loss=tf.keras.losses.MeanSquaredError())
+        super(IQA, self).compile(optimizer=tf.keras.optimizers.Adam(), loss=tf.keras.losses.MeanSquaredError())
 
     def train_step(self, data):
 
         def standardize(y):
-          return(y-0.88749385)/0.06297474
+            return (y - 0.88749385) / 0.06297474
+
         data = data_adapter.expand_1d(data)
         x, y, sample_weight = data_adapter.unpack_x_y_sample_weight(data)
 
         if tf.random.uniform([1]) < self.p_blur:
-          x = tfa.image.gaussian_filter2d(x)
+            x = tfa.image.gaussian_filter2d(x)
         # Generate noisy input with prob p_noise (random std)
         if tf.random.uniform([1]) < self.p_noise:
-          x = x + tf.random.normal(tf.shape(x), 0, tf.random.uniform([1], 0, 32 / 256))
+            x = x + tf.random.normal(tf.shape(x), 0, tf.random.uniform([1], 0, 32 / 256))
         x = tf.clip_by_value(x, -1, 1)
 
-        prediction=self.generator(x,training=True)
+        prediction = self.generator(x, training=True)
         score = self.score(tf.image.central_crop(y, self.crop), tf.image.central_crop(prediction, self.crop),
                            max_val=2.0)
         score = standardize(score)
@@ -256,5 +224,5 @@ class IQA(tf.keras.models.Model):
 
         _minimize(self.distribute_strategy, tape, self.optimizer, loss,
                   self.iqa.trainable_variables)
-        self.compiled_metrics.update_state(score,score_pred)
+        self.compiled_metrics.update_state(score, score_pred)
         return {m.name: m.result() for m in self.metrics}

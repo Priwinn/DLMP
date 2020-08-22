@@ -179,7 +179,7 @@ class TensorBoardImg(tf.keras.callbacks.Callback):
 
         i=0
         for x,y in self.plot_ds:
-            figures = plot_all(x,y,self.model,crop=self.crop,show=False)
+            figures = plot_all(x,y,self.model,show=False)
             for figure in figures:
                 i=i+1
                 with self.summary_writer.as_default():
